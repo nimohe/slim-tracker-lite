@@ -212,7 +212,7 @@ const db = {
 };
 
 const SPORT_TYPES_KEY = 'diet_tracker_sport_types_v2';
-const DEFAULT_TYPES = ['壶铃', '力量训练', '跑步', '跳绳', '爬楼', '有氧操', '自由训练'];
+const DEFAULT_TYPES = ['壶铃', '自由训练', '散步', '跑步', '爬楼', '有氧操'];
 
 function getSportTypes() {
   try {
@@ -223,6 +223,41 @@ function getSportTypes() {
 
 function saveSportTypes(types) {
   localStorage.setItem(SPORT_TYPES_KEY, JSON.stringify(types));
+}
+
+const SPORT_COLORS = [
+  '#F44336','#E91E63','#9C27B0','#673AB7','#3F51B5',
+  '#2196F3','#03A9F4','#00BCD4','#009688','#4CAF50',
+  '#8BC34A','#CDDC39','#FFEB3B','#FFC107','#FF9800',
+  '#FF5722','#795548','#607D8B','#9E9E9E','#263238'
+];
+const SPORT_COLORS_KEY = 'diet_tracker_sport_colors_v1';
+
+function getSportColorMap() {
+  try {
+    const stored = localStorage.getItem(SPORT_COLORS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch { return {}; }
+}
+
+function saveSportColorMap(map) {
+  localStorage.setItem(SPORT_COLORS_KEY, JSON.stringify(map));
+}
+
+function assignSportColors() {
+  const types = getSportTypes();
+  const map = getSportColorMap();
+  let changed = false;
+  types.forEach(t => {
+    if (map[t] === undefined) {
+      const used = Object.values(map);
+      for (let i = 0; i < SPORT_COLORS.length; i++) {
+        if (!used.includes(i)) { map[t] = i; changed = true; break; }
+      }
+    }
+  });
+  if (changed) saveSportColorMap(map);
+  return map;
 }
 
 /* ======================================================
@@ -612,16 +647,12 @@ function renderAnalyzeCharts() {
 
   if (!hasSport) { barChartInst = null; return; }
 
-  const typeColors = {
-    '壶铃': '#f97316', '力量训练': '#dc2626', '跑步': '#2563eb',
-    '跳绳': '#7c3aed', '爬楼': '#0891b2', '游泳': '#059669',
-    '有氧操': '#d97706', 'HIIT': '#db2777'
-  };
+  const colorMap = assignSportColors();
 
   const ds = Object.entries(cd.sportTypeData).map(([type, data]) => ({
     label: type,
     data,
-    backgroundColor: typeColors[type] || '#9ca3af',
+    backgroundColor: SPORT_COLORS[colorMap[type]] || '#9ca3af',
     borderRadius: 0,
     barPercentage: 0.45,
     categoryPercentage: 0.8
@@ -838,14 +869,16 @@ function renderSportUI() {
   }
 
   const types = getSportTypes();
+  const colorMap = assignSportColors();
   const typeBox = document.getElementById('type-btns');
   typeBox.innerHTML = types.map(t => {
     const sel = sportTypes.includes(t);
-    const delBtn = sportEditMode
+    const dot = `<span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${SPORT_COLORS[colorMap[t]] || '#9ca3af'}"></span>`;
+    const delBtn = sportEditMode && !DEFAULT_TYPES.includes(t)
       ? `<button data-del="${t}" class="type-del absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors text-[10px] leading-none shadow-sm">✕</button>`
       : '';
     return `<div class="relative type-item">
-      <button data-t="${t}" class="type-opt px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1 ${sel ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'}">${sel ? '✓ ' : ''}${t}</button>
+      <button data-t="${t}" class="type-opt px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1 ${sel ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'}">${sel ? '✓ ' : ''}${dot}${t}</button>
       ${delBtn}
     </div>`;
   }).join('');
@@ -965,6 +998,12 @@ document.getElementById('app').addEventListener('click', e => {
     if (types.includes(val)) { showToast('该运动已存在', true); return; }
     types.push(val);
     saveSportTypes(types);
+    const map = getSportColorMap();
+    const used = Object.values(map);
+    for (let i = 0; i < SPORT_COLORS.length; i++) {
+      if (!used.includes(i)) { map[val] = i; break; }
+    }
+    saveSportColorMap(map);
     inp.value = '';
     renderSportUI();
     return;
@@ -973,9 +1012,13 @@ document.getElementById('app').addEventListener('click', e => {
   const delBtn = e.target.closest('[data-del]');
   if (delBtn) {
     const t = delBtn.dataset.del;
+    if (DEFAULT_TYPES.includes(t)) { showToast('默认项目不可删除', true); return; }
     showConfirm('删除运动', `确定删除"${t}"吗？`, () => {
       const types = getSportTypes().filter(x => x !== t);
       saveSportTypes(types);
+      const map = getSportColorMap();
+      delete map[t];
+      saveSportColorMap(map);
       sportTypes = sportTypes.filter(x => x !== t);
       renderSportUI();
     });

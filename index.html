@@ -202,11 +202,11 @@ const db = {
     saveDB(d);
   },
   setUser(key, val) { const d = loadDB(); d.user[key] = val; saveDB(d); },
-  clear() { localStorage.removeItem(DB_KEY); },
+  clear() {console.log('clear'); [...new Set(['IsThisFirstTime_Log_From_LiveServer', ...Object.keys(localStorage).filter(k => k.startsWith('diet_tracker_'))])].forEach(k => localStorage.removeItem(k)); },
   exportJSON() {
     const blob = new Blob([JSON.stringify(loadDB(), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
-    a.download = `减肥记录备份_${new Date().toISOString().split('T')[0]}.json`;
+    const now = new Date(); a.download = `减肥记录备份_${now.toISOString().split('T')[0]}_${now.toTimeString().slice(0,5).replace(':','-')}.json`;
     a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
   }
 };
@@ -985,7 +985,10 @@ document.getElementById('app').addEventListener('click', e => {
 
   if (e.target.closest('#btn-clear-all')) {
     showConfirm('⚠️ 警告', '确定要清空所有数据吗？这将删除全部体重记录、运动打卡和个人设置。', () => {
-      showConfirm('🔴 最终确认', '此操作不可逆！所有数据将被永久清除。', () => { db.clear(); showToast('数据已全部清空'); refresh(); });
+      hideConfirm();
+      setTimeout(() => {
+        showConfirm('🔴 最终确认', '此操作不可逆！所有数据将被永久清除。', () => { db.clear(); showToast('数据已全部清空'); refresh(); });
+      }, 100);
     });
     return;
   }

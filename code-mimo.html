@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="减肥记录助手 - 便捷记录体重，追踪减肥进度，纯本地存储">
+  <title>减肥记录助手</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['DM Mono', '-apple-system', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="manifest" id="manifest-link">
+
+  <style>
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    ::-webkit-scrollbar { display: none; }
+    html { -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overflow: hidden; }
+    body { background: linear-gradient(170deg, #ecfdf5 0%, #f8fafc 40%, #fefce8 100%); }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    .anim-in { animation: fadeUp .35s ease-out forwards; }
+    @keyframes scaleIn { from { opacity:0; transform:scale(.92); } to { opacity:1; transform:scale(1); } }
+    .anim-scale { animation: scaleIn .22s ease-out forwards; }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(13,148,136,0.25); }
+      50% { box-shadow: 0 0 0 8px rgba(13,148,136,0); }
+    }
+    .input-glow:focus-within { animation: pulse-glow 2s ease-in-out; }
+    .swipe-wrap { overflow:hidden; position:relative; }
+    .swipe-inner { transition: transform .2s ease; will-change: transform; position:relative; z-index:2; }
+    .swipe-bg { position:absolute; inset:0; z-index:1; display:flex; align-items:center; justify-content:flex-end; padding-right:20px; background:#ef4444; border-radius:0.75rem; }
+    canvas { max-width:100%!important; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body class="antialiased text-gray-800">
+
+<div id="app" class="h-screen font-sans mx-auto max-w-md relative pb-20 shadow-2xl shadow-gray-300/40 sm:border-x border-gray-100/60 overflow-hidden">
+
+  <!-- Offline Banner -->
+  <div id="offline-bar" class="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[200] bg-gray-800/90 backdrop-blur text-white text-center py-1.5 text-xs font-medium transform -translate-y-full transition-transform duration-300">
+    离线模式 — 所有功能正常可用
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-8 left-1/2 -translate-x-1/2 z-[100] transition-all duration-300 opacity-0 pointer-events-none -translate-y-4">
+    <div id="toast-box" class="flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-medium bg-teal-50 text-teal-700 border border-teal-200">
+      <span id="toast-txt"></span>
+    </div>
+  </div>
+
+  <!-- Confirm Dialog -->
+  <div id="confirm-overlay" class="fixed inset-0 z-[110] hidden flex items-center justify-center p-5 bg-black/40 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl w-full max-w-xs overflow-hidden shadow-2xl anim-scale">
+      <div class="p-6 pb-4">
+        <h3 id="cfm-title" class="text-lg font-bold text-gray-800 mb-2">提示</h3>
+        <p id="cfm-msg" class="text-sm text-gray-600 leading-relaxed"></p>
+      </div>
+      <div class="flex border-t border-gray-100">
+        <button id="cfm-cancel" class="flex-1 py-3.5 text-gray-500 font-medium hover:bg-gray-50 transition-colors text-sm">取消</button>
+        <div class="w-px bg-gray-100"></div>
+        <button id="cfm-ok" class="flex-1 py-3.5 text-red-600 font-bold hover:bg-red-50 transition-colors text-sm">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content (routed views render here) -->
+  <div id="main-content" class="h-full"></div>
+
+  <!-- ===================== SPORT MODAL ===================== -->
+  <div id="sport-modal" class="fixed inset-0 z-50 hidden flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md overflow-hidden shadow-2xl anim-scale max-h-[85vh] flex flex-col">
+      <div class="p-5 pb-3 flex items-center justify-between shrink-0">
+        <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <span class="text-orange-500">🔥</span> 运动打卡
+        </h3>
+        <button id="sport-close" class="text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-colors">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-5 pb-5 overflow-y-auto flex-1">
+        <p class="text-xs font-bold text-gray-500 mb-2.5 uppercase tracking-wider">运动时长</p>
+        <div id="dur-btns" class="flex flex-wrap gap-2 mb-2"></div>
+        <input type="number" id="inp-custom-dur" placeholder="自定义分钟" min="1" class="w-full bg-gray-50 border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 rounded-xl px-3 py-2.5 text-sm font-medium outline-none transition-all mb-5">
+        <p class="text-xs font-bold text-gray-500 mb-2.5 uppercase tracking-wider">运动项目 (可多选)</p>
+        <div id="type-btns" class="flex flex-wrap gap-2"></div>
+      </div>
+      <div class="flex gap-3 p-4 border-t border-gray-100 shrink-0 pb-safe">
+        <button id="sport-cancel" class="flex-1 py-3 text-gray-500 font-bold bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors text-sm">取消</button>
+        <button id="sport-submit" class="flex-1 py-3 text-white font-bold bg-teal-600 rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 active:bg-teal-800 transition-colors text-sm">确认保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== BOTTOM NAV ===================== -->
+  <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/80 backdrop-blur-xl border-t border-gray-100 flex justify-around items-end pb-safe z-40">
+    <button data-tab="home" class="nav-btn flex flex-col items-center py-2.5 relative flex-1 touch-manipulation text-teal-600 transition-colors">
+      <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span class="nav-label text-[10px] font-bold mt-0.5">首页</span>
+      <div class="nav-dot absolute -top-0.5 w-1 h-1 bg-teal-500 rounded-full"></div>
+    </button>
+    <button data-tab="analyze" class="nav-btn flex flex-col items-center py-2.5 relative flex-1 touch-manipulation text-gray-400 transition-colors">
+      <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+      <span class="nav-label text-[10px] font-bold mt-0.5">分析</span>
+      <div class="nav-dot absolute -top-0.5 w-1 h-1 bg-teal-500 rounded-full hidden"></div>
+    </button>
+    <button data-tab="profile" class="nav-btn flex flex-col items-center py-2.5 relative flex-1 touch-manipulation text-gray-400 transition-colors">
+      <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span class="nav-label text-[10px] font-bold mt-0.5">我的</span>
+      <div class="nav-dot absolute -top-0.5 w-1 h-1 bg-teal-500 rounded-full hidden"></div>
+    </button>
+  </nav>
+
+</div>
+
+<script>
+/* ======================================================
+   DATA SERVICE
+   ====================================================== */
+const DB_KEY = 'diet_tracker_spa_v2';
+
+const defaultDB = () => ({
+  user: { nickname: '减脂达人', avatar: '', gender: 0, height: '', targetWeight: '' },
+  weights: [],
+  sports: []
+});
+
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) return defaultDB();
+    const d = JSON.parse(raw);
+    if (!d.user) d.user = defaultDB().user;
+    if (!d.weights) d.weights = [];
+    if (!d.sports) d.sports = [];
+    const def = defaultDB().user;
+    Object.keys(def).forEach(k => { if (d.user[k] === undefined) d.user[k] = def[k]; });
+    return d;
+  } catch { return defaultDB(); }
+}
+
+function saveDB(d) { localStorage.setItem(DB_KEY, JSON.stringify(d)); }
+
+const db = {
+  get: loadDB,
+  save: saveDB,
+  addWeight(val) {
+    const d = loadDB(); const now = new Date();
+    const od = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    d.weights.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), value: parseFloat(val).toFixed(1), date: od.toISOString().split('T')[0], time: now.toTimeString().slice(0,8), timestamp: now.getTime() });
+    saveDB(d);
+  },
+  addSport(duration, types) {
+    const d = loadDB(); const now = new Date();
+    const od = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    d.sports.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), duration: parseInt(duration), types: [...types], date: od.toISOString().split('T')[0], time: now.toTimeString().slice(0,8), timestamp: now.getTime() });
+    saveDB(d);
+  },
+  del(type, id) {
+    const d = loadDB();
+    if (type === 'weight') d.weights = d.weights.filter(w => w.id !== id);
+    else d.sports = d.sports.filter(s => s.id !== id);
+    saveDB(d);
+  },
+  setUser(key, val) { const d = loadDB(); d.user[key] = val; saveDB(d); },
+  clear() { localStorage.removeItem(DB_KEY); },
+  exportJSON() {
+    const blob = new Blob([JSON.stringify(loadDB(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.download = `减肥记录备份_${new Date().toISOString().split('T')[0]}.json`;
+    a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+  }
+};
+
+/* ======================================================
+   STATE
+   ====================================================== */
+let activeTab = 'home';
+let displayLimit = 30;
+let chartPeriod = 'week';
+let lineChartInst = null, barChartInst = null;
+let sportDur = '30', sportTypes = [];
+let deferredPWAPrompt = null;
+
+/* ======================================================
+   UTILITIES
+   ====================================================== */
+function showToast(msg, err = false) {
+  const t = document.getElementById('toast'), b = document.getElementById('toast-box'), tx = document.getElementById('toast-txt');
+  b.className = `flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-medium ${err ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-teal-50 text-teal-700 border border-teal-200'}`;
+  tx.textContent = msg;
+  t.classList.remove('opacity-0','pointer-events-none','-translate-y-4');
+  t.classList.add('opacity-100','translate-y-0');
+  setTimeout(() => { t.classList.add('opacity-0','pointer-events-none','-translate-y-4'); t.classList.remove('opacity-100','translate-y-0'); }, 2200);
+}
+
+let _cfmCb = null;
+function showConfirm(title, msg, onOk) {
+  document.getElementById('cfm-title').textContent = title;
+  document.getElementById('cfm-msg').textContent = msg;
+  _cfmCb = onOk;
+  document.getElementById('confirm-overlay').classList.remove('hidden');
+}
+function hideConfirm() { document.getElementById('confirm-overlay').classList.add('hidden'); _cfmCb = null; }
+document.getElementById('cfm-cancel').onclick = hideConfirm;
+document.getElementById('cfm-ok').onclick = () => { if (_cfmCb) _cfmCb(); hideConfirm(); };
+
+/* ======================================================
+   ROUTER
+   ====================================================== */
+function navigate(tab) { location.hash = tab; }
+
+function updateNav() {
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    const hit = b.dataset.tab === activeTab;
+    b.className = `nav-btn flex flex-col items-center py-2.5 relative flex-1 touch-manipulation transition-colors ${hit ? 'text-teal-600' : 'text-gray-400'}`;
+    b.querySelector('.nav-dot').classList.toggle('hidden', !hit);
+  });
+}
+
+function renderView(tab) {
+  if (lineChartInst) { lineChartInst.destroy(); lineChartInst = null; }
+  if (barChartInst) { barChartInst.destroy(); barChartInst = null; }
+  activeTab = tab;
+  if (tab === 'home') renderHome();
+  else if (tab === 'analyze') renderAnalyze();
+  else renderProfile();
+  updateNav();
+}
+
+function refresh() {
+  if (activeTab === 'home') {
+    renderHomeList();
+  } else {
+    renderView(activeTab);
+  }
+}
+
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace('#', '') || 'home';
+  renderView(tab);
+});
+
+/* ======================================================
+   HOME
+   ====================================================== */
+function getHomeHTML() {
+  return `<div class="h-screen flex flex-col anim-in">
+    <div class="flex-1 overflow-y-auto p-4 pb-6">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-2xl font-bold text-teal-800 tracking-tight">今日记录</h2>
+        <span id="today-date" class="text-xs font-medium text-gray-400"></span>
+      </div>
+      <h3 class="text-xs font-bold text-gray-400 mb-3 px-1 uppercase tracking-widest">近期动态</h3>
+      <div id="history-list" class="space-y-2.5"></div>
+      <div id="history-empty" class="hidden text-center py-14 bg-white/80 rounded-2xl border border-dashed border-gray-200">
+        <div class="w-14 h-14 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-3">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-gray-300"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        </div>
+        <p class="text-gray-400 font-medium text-sm">暂无记录</p>
+        <p class="text-xs text-gray-300 mt-1">在下方输入你的第一条数据吧</p>
+      </div>
+      <div id="load-more-wrap" class="hidden text-center mt-3 mb-4">
+        <button id="btn-load-more" class="text-xs text-teal-600 font-medium py-2 px-4 hover:bg-teal-50 rounded-lg transition-colors">加载更多...</button>
+      </div>
+    </div>
+    <div id="home-input-bar" class="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-md z-30 px-4 pb-2 pointer-events-none">
+      <div class="pointer-events-auto bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg shadow-gray-300/40 border border-gray-100 p-3 input-glow">
+        <div class="flex items-center gap-2.5">
+          <div class="flex-1 flex items-center bg-gray-50 rounded-xl overflow-hidden border border-gray-200 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100 transition-all">
+            <div class="pl-3 text-teal-500 shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>
+            </div>
+            <input type="number" id="inp-weight" step="0.1" placeholder="输入体重 (kg)" class="w-full bg-transparent px-2 py-2.5 outline-none text-gray-700 font-medium text-sm">
+          </div>
+          <button id="btn-save-w" class="bg-teal-600 text-white px-5 py-2.5 font-bold hover:bg-teal-700 active:bg-teal-800 transition-colors text-sm rounded-xl shrink-0 shadow-md shadow-teal-600/20 active:scale-95">
+            保存
+          </button>
+          <button id="fab-sport" class="bg-gradient-to-br from-orange-400 to-orange-600 text-white rounded-xl p-2.5 shadow-md shadow-orange-500/30 hover:scale-105 active:scale-95 transition-all shrink-0" aria-label="运动打卡">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderHome() {
+  document.getElementById('main-content').innerHTML = getHomeHTML();
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+  renderHomeList();
+}
+
+function renderHomeList() {
+  const d = db.get();
+  const list = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  const moreWrap = document.getElementById('load-more-wrap');
+
+  const mixed = [];
+  d.weights.forEach(w => mixed.push({ ...w, type: 'weight' }));
+  d.sports.forEach(s => mixed.push({ ...s, type: 'sport' }));
+  mixed.sort((a, b) => b.timestamp - a.timestamp);
+
+  if (!mixed.length) { list.innerHTML = ''; empty.classList.remove('hidden'); moreWrap.classList.add('hidden'); initSwipe(); return; }
+  empty.classList.add('hidden');
+
+  const show = mixed.slice(0, displayLimit);
+  moreWrap.classList.toggle('hidden', mixed.length <= displayLimit);
+
+  list.innerHTML = show.map(item => {
+    const isW = item.type === 'weight';
+    const label = isW ? '体重' : '运动';
+    const labelBg = isW ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600';
+    const iconBg = isW ? 'bg-blue-50 text-blue-500' : 'bg-orange-50 text-orange-500';
+    const icon = isW
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>';
+    const value = isW ? `${item.value} kg` : `${item.types.join(' + ')}  ${item.duration}分`;
+
+    return `<div class="swipe-wrap rounded-xl" data-id="${item.id}" data-type="${item.type}">
+      <div class="swipe-bg"><span class="text-white text-xs font-bold">删除</span></div>
+      <div class="swipe-inner bg-white rounded-xl p-3.5 flex items-center justify-between shadow-sm border border-gray-50">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="p-2 rounded-lg ${iconBg} shrink-0">${icon}</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${labelBg}">${label}</span>
+            </div>
+            <p class="font-bold text-gray-800 text-sm truncate">${value}</p>
+            <p class="text-[10px] text-gray-400 font-medium">${item.date} ${item.time || ''}</p>
+          </div>
+        </div>
+        <button class="btn-del shrink-0 text-gray-300 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors" data-id="${item.id}" data-type="${item.type}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+
+  initSwipe();
+}
+
+function initSwipe() {
+  document.querySelectorAll('.swipe-wrap').forEach(wrap => {
+    const inner = wrap.querySelector('.swipe-inner');
+    let sx = 0, dx = 0, swiping = false;
+    inner.addEventListener('touchstart', e => { sx = e.touches[0].clientX; swiping = true; inner.style.transition = 'none'; }, { passive: true });
+    inner.addEventListener('touchmove', e => {
+      if (!swiping) return;
+      dx = e.touches[0].clientX - sx;
+      if (dx > 0) dx = 0;
+      if (dx < -90) dx = -90;
+      inner.style.transform = `translateX(${dx}px)`;
+    }, { passive: true });
+    inner.addEventListener('touchend', () => {
+      swiping = false;
+      inner.style.transition = 'transform .2s ease';
+      inner.style.transform = dx < -45 ? 'translateX(-80px)' : 'translateX(0)';
+    });
+  });
+}
+
+function handleDelete(type, id) {
+  showConfirm('确认删除', '删除后无法恢复，是否继续？', () => {
+    db.del(type, id);
+    showToast('已删除');
+    refresh();
+  });
+}
+
+/* ======================================================
+   ANALYZE
+   ====================================================== */
+function getAnalyzeHTML() {
+  const periodBtnClass = (p) => `period-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all ${chartPeriod === p ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`;
+  return `<div class="p-4 pb-24 anim-in">
+    <h2 class="text-2xl font-bold text-teal-800 tracking-tight mb-5">数据分析</h2>
+    <div class="flex gap-1.5 bg-gray-100 rounded-xl p-1 mb-5">
+      <button data-period="week" class="${periodBtnClass('week')}">近一周</button>
+      <button data-period="month" class="${periodBtnClass('month')}">近一月</button>
+      <button data-period="all" class="${periodBtnClass('all')}">全部</button>
+    </div>
+    <div id="line-card" class="bg-white rounded-2xl p-4 shadow-sm mb-5 border border-gray-50">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-gray-800 text-sm">体重走势 (kg)</h3>
+        <span id="weight-trend" class="text-[10px] font-bold px-2 py-0.5 rounded-full"></span>
+      </div>
+      <div class="h-52"><canvas id="chart-line"></canvas></div>
+    </div>
+    <div id="bar-card" class="bg-white rounded-2xl p-4 shadow-sm mb-5 border border-gray-50">
+      <h3 class="font-bold text-gray-800 text-sm mb-4">运动与体重对比</h3>
+      <div class="h-56"><canvas id="chart-bar"></canvas></div>
+    </div>
+    <button id="btn-export-report" class="w-full py-3 bg-teal-600 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 active:bg-teal-800 transition-all text-sm mb-3">
+      保存图表报表
+    </button>
+    <div id="chart-empty" class="hidden text-center py-20 bg-white/80 rounded-2xl border border-dashed border-gray-200">
+      <div class="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-3">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-gray-300"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+      </div>
+      <p class="text-gray-400 font-medium text-sm">暂无图表数据</p>
+      <p class="text-xs text-gray-300 mt-1">记录体重后即可查看趋势</p>
+    </div>
+  </div>`;
+}
+
+function renderAnalyze() {
+  document.getElementById('main-content').innerHTML = getAnalyzeHTML();
+  renderAnalyzeCharts();
+}
+
+function getChartData(period) {
+  const d = db.get();
+  const now = new Date();
+  const cutoff = new Date(now);
+  if (period === 'week') cutoff.setDate(cutoff.getDate() - 7);
+  else if (period === 'month') cutoff.setDate(cutoff.getDate() - 30);
+  else cutoff.setFullYear(2000);
+
+  const wByDate = {};
+  d.weights.forEach(w => { if (w.date >= cutoff.toISOString().split('T')[0]) { if (!wByDate[w.date] || w.timestamp > wByDate[w.date].ts) wByDate[w.date] = { v: parseFloat(w.value), ts: w.timestamp }; } });
+  const sByDate = {};
+  d.sports.forEach(s => { if (s.date >= cutoff.toISOString().split('T')[0]) sByDate[s.date] = (sByDate[s.date] || 0) + s.duration; });
+
+  const dates = [...new Set([...Object.keys(wByDate), ...Object.keys(sByDate)])].sort();
+  return {
+    labels: dates.map(d => d.substring(5)),
+    weights: dates.map(d => wByDate[d] ? wByDate[d].v : null),
+    durations: dates.map(d => sByDate[d] || 0),
+    rawDates: dates
+  };
+}
+
+function renderAnalyzeCharts() {
+  const d = db.get();
+  const cd = getChartData(chartPeriod);
+  const emptyEl = document.getElementById('chart-empty');
+  const lineCard = document.getElementById('line-card');
+  const barCard = document.getElementById('bar-card');
+  const exportBtn = document.getElementById('btn-export-report');
+  const trendEl = document.getElementById('weight-trend');
+
+  if (!cd.rawDates.length) {
+    emptyEl.classList.remove('hidden');
+    lineCard.classList.add('hidden'); barCard.classList.add('hidden'); exportBtn.classList.add('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  lineCard.classList.remove('hidden'); barCard.classList.remove('hidden'); exportBtn.classList.remove('hidden');
+
+  const validW = cd.weights.filter(Boolean);
+  if (validW.length >= 2) {
+    const diff = validW[validW.length - 1] - validW[0];
+    const arrow = diff < 0 ? '↓' : diff > 0 ? '↑' : '→';
+    trendEl.textContent = `${arrow} ${Math.abs(diff).toFixed(1)}kg`;
+    trendEl.className = `text-[10px] font-bold px-2 py-0.5 rounded-full ${diff <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`;
+  } else { trendEl.textContent = ''; }
+
+  const target = d.user.targetWeight ? parseFloat(d.user.targetWeight) : null;
+  const gridColor = 'rgba(0,0,0,0.04)';
+
+  const lineDs = [{
+    label: '体重', data: cd.weights, borderColor: '#0d9488', backgroundColor: 'rgba(13,148,136,0.08)',
+    fill: true, tension: 0.35, pointBackgroundColor: '#0d9488', pointBorderColor: '#fff', pointBorderWidth: 2,
+    pointRadius: cd.rawDates.length > 20 ? 2 : 4, pointHoverRadius: 6, spanGaps: true
+  }];
+  if (target) lineDs.push({
+    label: `目标 ${target}kg`, data: Array(cd.rawDates.length).fill(target),
+    borderColor: '#f43f5e', borderDash: [8, 4], borderWidth: 1.5, pointRadius: 0, fill: false
+  });
+
+  lineChartInst = new Chart(document.getElementById('chart-line').getContext('2d'), {
+    type: 'line', data: { labels: cd.labels, datasets: lineDs },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }, tooltip: { mode: 'index', intersect: false } },
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } } }, y: { grid: { color: gridColor }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) } } },
+      interaction: { mode: 'nearest', axis: 'x', intersect: false }
+    }
+  });
+
+  barChartInst = new Chart(document.getElementById('chart-bar').getContext('2d'), {
+    type: 'bar',
+    data: { labels: cd.labels, datasets: [
+      { label: '体重 (kg)', data: cd.weights, yAxisID: 'y', backgroundColor: 'rgba(13,148,136,0.65)', borderRadius: 3, barPercentage: 0.35 },
+      { label: '运动 (min)', data: cd.durations, yAxisID: 'y1', backgroundColor: 'rgba(249,115,22,0.65)', borderRadius: 3, barPercentage: 0.35 }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } } },
+        y: { type: 'linear', position: 'left', title: { display: true, text: 'kg', font: { size: 10 } }, grid: { color: gridColor }, ticks: { font: { size: 10 } } },
+        y1: { type: 'linear', position: 'right', title: { display: true, text: 'min', font: { size: 10 } }, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+/* ======================================================
+   PROFILE
+   ====================================================== */
+function getProfileHTML() {
+  return `<div class="p-4 pb-8 anim-in">
+    <h2 class="text-2xl font-bold text-teal-800 tracking-tight mb-5">个人中心</h2>
+    <div class="bg-white rounded-2xl p-5 shadow-sm mb-5 border border-gray-50">
+      <div class="flex items-center gap-4">
+        <div id="avatar-wrap" class="relative w-16 h-16 rounded-full overflow-hidden bg-teal-50 shrink-0 cursor-pointer border-2 border-teal-100 hover:border-teal-300 transition-colors">
+          <img id="avatar-img" src="" alt="" class="w-full h-full object-cover hidden">
+          <div id="avatar-ph" class="w-full h-full flex items-center justify-center text-teal-400">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <input type="file" id="inp-avatar" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+        </div>
+        <div class="flex-1 min-w-0">
+          <input type="text" id="inp-nickname" placeholder="输入昵称" maxlength="12" class="w-full text-lg font-bold text-gray-800 bg-transparent outline-none border-b border-transparent focus:border-teal-300 transition-colors pb-1 truncate">
+          <div class="flex gap-1.5 mt-2" id="gender-group">
+            <button data-g="0" class="gender-btn px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all bg-gray-50 border-gray-200 text-gray-400">未设置</button>
+            <button data-g="1" class="gender-btn px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all bg-gray-50 border-gray-200 text-gray-400">男</button>
+            <button data-g="2" class="gender-btn px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all bg-gray-50 border-gray-200 text-gray-400">女</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm overflow-hidden mb-5 border border-gray-50">
+      <div class="flex items-center justify-between p-4 border-b border-gray-50">
+        <span class="text-sm text-gray-600 font-medium">身高 (cm)</span>
+        <input type="number" id="inp-height" placeholder="用于BMI" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
+      </div>
+      <div class="flex items-center justify-between p-4">
+        <span class="text-sm text-gray-600 font-medium">目标体重 (kg)</span>
+        <input type="number" id="inp-target" step="0.1" placeholder="减重目标" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl p-5 shadow-sm mb-5 border border-gray-50">
+      <h3 class="font-bold text-gray-800 text-sm mb-2">BMI 仪表盘</h3>
+      <div id="bmi-gauge" class="my-2"></div>
+      <div class="flex justify-between text-[9px] text-gray-400 mt-1 px-2">
+        <span>&lt;18.5 偏瘦</span>
+        <span>18.5-24 正常</span>
+        <span>24-28 偏胖</span>
+        <span>≥28 肥胖</span>
+      </div>
+    </div>
+    <button id="btn-pwa-install" class="hidden w-full py-3 mb-5 bg-teal-600 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 transition-all text-sm flex items-center justify-center gap-2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+      添加至主屏幕
+    </button>
+    <h3 class="text-xs font-bold text-gray-400 mb-3 px-1 uppercase tracking-widest">数据管理</h3>
+    <div class="space-y-2.5 mb-3">
+      <button id="btn-export-json" class="w-full py-3 border-2 border-teal-100 text-teal-700 font-bold rounded-xl bg-white hover:bg-teal-50 transition-colors text-sm">导出数据备份 (.json)</button>
+      <button id="btn-import-json" class="w-full py-3 border-2 border-gray-200 text-gray-600 font-bold rounded-xl bg-white hover:bg-gray-50 transition-colors text-sm">导入数据备份</button>
+      <button id="btn-clear-all" class="w-full py-3 border-2 border-red-100 text-red-500 font-bold rounded-xl bg-white hover:bg-red-50 hover:border-red-200 transition-colors text-sm">清除本地所有数据</button>
+    </div>
+    <input type="file" id="inp-import" accept=".json" class="hidden">
+  </div>`;
+}
+
+function renderProfile() {
+  document.getElementById('main-content').innerHTML = getProfileHTML();
+  renderProfileContent();
+  // PWA install button visibility
+  const pwaBtn = document.getElementById('btn-pwa-install');
+  if (pwaBtn) pwaBtn.classList.toggle('hidden', !deferredPWAPrompt);
+}
+
+function renderGauge(d) {
+  const h = parseFloat(d.user.height);
+  const bmi = (h && d.weights.length) ? (parseFloat(d.weights[0].value) / ((h / 100) ** 2)) : null;
+  const box = document.getElementById('bmi-gauge');
+  const cx = 100, cy = 100, r = 78;
+  function pt(deg) { const rd = deg * Math.PI / 180; return { x: cx + r * Math.cos(rd), y: cy + r * Math.sin(rd) }; }
+  function arc(a1, a2) { const p1 = pt(a1), p2 = pt(a2); return `M${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A${r} ${r} 0 ${(a2-a1)>180?1:0} 1 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`; }
+  const b2a = b => 180 + ((b - 14) / 22) * 180;
+  const zones = [{ f:14,t:18.5,c:'#60a5fa' },{ f:18.5,t:24,c:'#4ade80' },{ f:24,t:28,c:'#fbbf24' },{ f:28,t:36,c:'#f87171' }];
+  let svg = `<svg viewBox="0 0 200 115" class="w-full max-w-[260px] mx-auto block">`;
+  zones.forEach(z => { svg += `<path d="${arc(b2a(z.f),b2a(z.t))}" fill="none" stroke="${z.c}" stroke-width="16" stroke-linecap="butt" opacity="0.2"/>`; });
+  if (bmi) {
+    const cl = Math.max(14,Math.min(36,bmi)), ang = b2a(cl);
+    let col; if(bmi<18.5)col='#3b82f6';else if(bmi<24)col='#22c55e';else if(bmi<28)col='#eab308';else col='#ef4444';
+    svg += `<path d="${arc(180,ang)}" fill="none" stroke="${col}" stroke-width="16" stroke-linecap="round"/>`;
+    const nr = r - 24, tip = { x:cx+nr*Math.cos(ang*Math.PI/180), y:cy+nr*Math.sin(ang*Math.PI/180) };
+    svg += `<line x1="${cx}" y1="${cy}" x2="${tip.x.toFixed(1)}" y2="${tip.y.toFixed(1)}" stroke="#374151" stroke-width="2.5" stroke-linecap="round"/>`;
+    svg += `<circle cx="${cx}" cy="${cy}" r="5" fill="#374151"/><circle cx="${cx}" cy="${cy}" r="2.5" fill="#fff"/>`;
+    svg += `<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="22" font-weight="bold" fill="${col}">${bmi.toFixed(1)}</text>`;
+    let st; if(bmi<18.5)st='偏瘦';else if(bmi<24)st='正常';else if(bmi<28)st='偏胖';else st='肥胖';
+    svg += `<text x="${cx}" y="${cy+37}" text-anchor="middle" font-size="10" fill="#9ca3af">${st}</text>`;
+  } else { svg += `<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="14" fill="#d1d5db">暂无数据</text>`; }
+  svg += `</svg>`;
+  box.innerHTML = svg;
+}
+
+/* ======================================================
+   SPORT MODAL
+   ====================================================== */
+const sportModal = document.getElementById('sport-modal');
+const customDurInp = document.getElementById('inp-custom-dur');
+const PRESETS = ['15', '30', '45', '60'];
+const SPORT_TYPES = ['壶铃', '力量训练', '跑步', '跳绳', '爬楼', '游泳', '有氧操', 'HIIT'];
+
+function openSport() {
+  sportDur = '30'; sportTypes = []; customDurInp.value = '';
+  renderSportUI();
+  sportModal.classList.remove('hidden');
+}
+function closeSport() { sportModal.classList.add('hidden'); }
+
+document.getElementById('sport-close').onclick = closeSport;
+document.getElementById('sport-cancel').onclick = closeSport;
+sportModal.addEventListener('click', e => { if (e.target === sportModal) closeSport(); });
+
+customDurInp.addEventListener('input', () => {
+  if (customDurInp.value) sportDur = '';
+  renderSportUI();
+});
+
+function renderSportUI() {
+  const durBox = document.getElementById('dur-btns');
+  durBox.innerHTML = PRESETS.map(d => {
+    const sel = sportDur === d && !customDurInp.value;
+    return `<button data-d="${d}" class="dur-opt px-4 py-2 rounded-xl text-xs font-bold transition-all border ${sel ? 'bg-teal-600 border-teal-600 text-white shadow-md shadow-teal-600/20' : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300'}">${d}分</button>`;
+  }).join('');
+
+  const typeBox = document.getElementById('type-btns');
+  typeBox.innerHTML = SPORT_TYPES.map(t => {
+    const sel = sportTypes.includes(t);
+    return `<button data-t="${t}" class="type-opt px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1 ${sel ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'}">${sel ? '✓ ' : ''}${t}</button>`;
+  }).join('');
+
+  durBox.querySelectorAll('.dur-opt').forEach(b => b.onclick = () => { sportDur = b.dataset.d; customDurInp.value = ''; renderSportUI(); });
+  typeBox.querySelectorAll('.type-opt').forEach(b => b.onclick = () => {
+    const t = b.dataset.t;
+    sportTypes = sportTypes.includes(t) ? sportTypes.filter(x => x !== t) : [...sportTypes, t];
+    renderSportUI();
+  });
+}
+
+/* ======================================================
+   EVENT DELEGATION
+   ====================================================== */
+document.getElementById('app').addEventListener('click', e => {
+  const navBtn = e.target.closest('.nav-btn');
+  if (navBtn) { navigate(navBtn.dataset.tab); return; }
+
+  if (e.target.closest('#btn-save-w')) {
+    const v = document.querySelector('#inp-weight')?.value;
+    if (!v || isNaN(v) || parseFloat(v) <= 0) { showToast('请输入有效体重', true); return; }
+    db.addWeight(v);
+    document.querySelector('#inp-weight').value = '';
+    showToast('体重已记录');
+    renderHomeList();
+    document.querySelector('#main-content .overflow-y-auto')?.scrollTo(0, 0);
+    return;
+  }
+
+  if (e.target.closest('.swipe-bg') || e.target.closest('.btn-del')) {
+    const wrap = e.target.closest('.swipe-wrap');
+    if (wrap) handleDelete(wrap.dataset.type, wrap.dataset.id);
+    return;
+  }
+
+  if (e.target.closest('#btn-load-more')) {
+    displayLimit += 30;
+    renderHomeList();
+    return;
+  }
+
+  if (e.target.closest('#fab-sport')) {
+    openSport();
+    return;
+  }
+
+  const periodBtn = e.target.closest('.period-btn');
+  if (periodBtn) {
+    chartPeriod = periodBtn.dataset.period;
+    renderAnalyze();
+    return;
+  }
+
+  if (e.target.closest('#btn-export-report')) {
+    handleExportReport();
+    return;
+  }
+
+  if (e.target.closest('.gender-btn')) {
+    const g = parseInt(e.target.closest('.gender-btn').dataset.g);
+    db.setUser('gender', g);
+    renderProfileContent();
+    return;
+  }
+
+  if (e.target.closest('#btn-export-json')) {
+    db.exportJSON();
+    showToast('备份已下载');
+    return;
+  }
+
+  if (e.target.closest('#btn-import-json')) {
+    document.querySelector('#inp-import')?.click();
+    return;
+  }
+
+  if (e.target.closest('#btn-clear-all')) {
+    showConfirm('⚠️ 警告', '确定要清空所有数据吗？这将删除全部体重记录、运动打卡和个人设置。', () => {
+      showConfirm('🔴 最终确认', '此操作不可逆！所有数据将被永久清除。', () => { db.clear(); showToast('数据已全部清空'); refresh(); });
+    });
+    return;
+  }
+
+  if (e.target.closest('#btn-pwa-install')) {
+    if (!deferredPWAPrompt) return;
+    deferredPWAPrompt.prompt();
+    deferredPWAPrompt.userChoice.then(() => { deferredPWAPrompt = null; document.querySelector('#btn-pwa-install')?.classList.add('hidden'); });
+    return;
+  }
+
+  if (e.target.closest('#sport-submit')) {
+    const dur = document.querySelector('#inp-custom-dur')?.value || sportDur;
+    if (!dur || parseInt(dur) <= 0) { showToast('请输入有效运动时长', true); return; }
+    if (!sportTypes.length) { showToast('请至少选择一项运动', true); return; }
+    db.addSport(dur, sportTypes);
+    closeSport();
+    showToast('打卡成功');
+    renderHomeList();
+    return;
+  }
+});
+
+document.getElementById('app').addEventListener('change', e => {
+  if (e.target.id === 'inp-avatar') {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 500 * 1024) { showToast('图片不能超过500KB', true); return; }
+    const r = new FileReader();
+    r.onload = ev => { db.setUser('avatar', ev.target.result); renderProfileContent(); showToast('头像已更新'); };
+    r.readAsDataURL(f);
+    return;
+  }
+
+  if (e.target.id === 'inp-import') {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.user || !data.weights || !data.sports) throw 0;
+        showConfirm('导入数据', '导入将覆盖当前所有数据，是否继续？', () => { localStorage.setItem(DB_KEY, JSON.stringify(data)); showToast('导入成功'); refresh(); });
+      } catch { showToast('文件格式无效', true); }
+    };
+    r.readAsText(f);
+    return;
+  }
+});
+
+document.getElementById('app').addEventListener('blur', e => {
+  if (e.target.id === 'inp-nickname') {
+    const v = e.target.value.trim();
+    if (v) { db.setUser('nickname', v); showToast('昵称已保存'); }
+    return;
+  }
+  if (e.target.id === 'inp-height') {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { db.setUser('height', Math.round(v)); showToast('身高已保存'); renderProfileContent(); }
+    return;
+  }
+  if (e.target.id === 'inp-target') {
+    const v = parseFloat(e.target.value);
+    if (v > 0) { db.setUser('targetWeight', v.toFixed(1)); showToast('目标已保存'); renderProfileContent(); }
+    return;
+  }
+}, true);
+
+/* ======================================================
+   EXPORT REPORT
+   ====================================================== */
+async function handleExportReport() {
+  showToast('正在生成报表...');
+  await new Promise(r => setTimeout(r, 100));
+  const W = 800, H = 1200;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, W, 90);
+  grad.addColorStop(0, '#0f766e'); grad.addColorStop(1, '#14b8a6');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, 90);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 24px sans-serif'; ctx.fillText('📊 减肥记录报告', 28, 42);
+  ctx.font = '12px sans-serif'; ctx.fillText('生成于 ' + new Date().toLocaleString('zh-CN'), 28, 68);
+  const d = db.get();
+  const latestW = d.weights.length ? d.weights[0].value : '--';
+  const tw = d.user.targetWeight || '--';
+  const h = parseFloat(d.user.height);
+  let bmiStr = '--';
+  if (h && d.weights.length) { const hm = h / 100; bmiStr = (parseFloat(d.weights[0].value) / (hm * hm)).toFixed(1); }
+  ctx.fillStyle = '#374151'; ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(`当前体重: ${latestW}kg   目标体重: ${tw}kg   BMI: ${bmiStr}`, 28, 130);
+  ctx.font = '12px sans-serif'; ctx.fillStyle = '#9ca3af';
+  ctx.fillText(`体重记录 ${d.weights.length} 条 | 运动打卡 ${d.sports.length} 次`, 28, 155);
+  const lc = document.getElementById('chart-line'); if (lc) ctx.drawImage(lc, 20, 175, 760, 380);
+  const bc = document.getElementById('chart-bar'); if (bc) ctx.drawImage(bc, 20, 580, 760, 380);
+  ctx.fillStyle = '#d1d5db'; ctx.font = '11px sans-serif';
+  ctx.fillText('减肥记录助手 · 纯本地存储 · 数据完全属于你', 28, H - 20);
+  c.toBlob(blob => {
+    const a = document.createElement('a');
+    a.download = `减肥报告_${new Date().toISOString().split('T')[0]}.png`;
+    a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+    showToast('报表已保存');
+  }, 'image/png');
+}
+
+/* ======================================================
+   PWA & OFFLINE
+   ====================================================== */
+(function initManifest() {
+  function genIcon(sz) {
+    const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz;
+    const x = cv.getContext('2d'), rr = sz * 0.18;
+    x.fillStyle = '#0f766e';
+    x.beginPath(); x.moveTo(rr,0); x.lineTo(sz-rr,0); x.quadraticCurveTo(sz,0,sz,rr);
+    x.lineTo(sz,sz-rr); x.quadraticCurveTo(sz,sz,sz-rr,sz); x.lineTo(rr,sz);
+    x.quadraticCurveTo(0,sz,0,sz-rr); x.lineTo(0,rr); x.quadraticCurveTo(0,0,rr,0); x.fill();
+    x.fillStyle='#fff'; x.font=`bold ${sz*.38}px sans-serif`; x.textAlign='center'; x.textBaseline='middle';
+    x.fillText('减',sz/2,sz/2+sz*.02);
+    return cv.toDataURL('image/png');
+  }
+  const manifest = {
+    name:'减肥记录助手专业版', short_name:'减肥记录',
+    start_url:'./index.html?utm_source=pwa', display:'standalone',
+    background_color:'#ffffff', theme_color:'#0f766e',
+    icons:[{src:genIcon(192),sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:genIcon(512),sizes:'512x512',type:'image/png',purpose:'any maskable'}]
+  };
+  const blob = new Blob([JSON.stringify(manifest)],{type:'application/json'});
+  document.getElementById('manifest-link').href = URL.createObjectURL(blob);
+})();
+
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPWAPrompt = e; document.querySelector('#btn-pwa-install')?.classList.remove('hidden'); });
+window.addEventListener('appinstalled', () => { document.querySelector('#btn-pwa-install')?.classList.add('hidden'); showToast('已安装到桌面'); });
+
+function updateNet() {
+  const bar = document.getElementById('offline-bar');
+  bar.style.transform = navigator.onLine ? 'translateY(-100%)' : 'translateY(0)';
+}
+window.addEventListener('online', updateNet);
+window.addEventListener('offline', updateNet);
+updateNet();
+
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+
+/* ======================================================
+   INIT
+   ====================================================== */
+if (!location.hash) location.hash = 'home';
+window.dispatchEvent(new Event('hashchange'));
+</script>
+</body>
+</html>

@@ -27,7 +27,9 @@
 
   <style>
     .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-    ::-webkit-scrollbar { display: none; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
     html { -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; overflow: hidden; }
     body { background: linear-gradient(170deg, #ecfdf5 0%, #f8fafc 40%, #fefce8 100%); }
@@ -42,11 +44,19 @@
     .input-glow:focus-within { animation: pulse-glow 2s ease-in-out; }
     .swipe-wrap { overflow:hidden; position:relative; }
     .swipe-inner { transition: transform .2s ease; will-change: transform; position:relative; z-index:2; }
-    .swipe-bg { position:absolute; inset:0; z-index:1; display:flex; align-items:center; justify-content:flex-end; padding-right:20px; background:#ef4444; border-radius:0.75rem; }
+    .swipe-bg { position:absolute; inset:0; z-index:1; display:flex; align-items:center; justify-content:flex-end; padding-right:20px;  border-radius:0.75rem; }
     canvas { max-width:100%!important; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
+    .bmi-track { position:relative; height:8px; border-radius:999px; background:linear-gradient(to right,#4A90D9 0%,#4A90D9 22.86%,#34C759 22.86%,#34C759 54.29%,#FFCC00 54.29%,#FFCC00 77.14%,#FF3B30 77.14%,#FF3B30 100%); overflow:visible; }
+    .bmi-track::before { content:''; position:absolute; top:-2px; bottom:-2px; left:0; right:0; pointer-events:none; background:linear-gradient(to right,transparent 22.74%,white 22.74%,white 22.98%,transparent 22.98%),linear-gradient(to right,transparent 54.17%,white 54.17%,white 54.41%,transparent 54.41%),linear-gradient(to right,transparent 77.02%,white 77.02%,white 77.26%,transparent 77.26%); border-radius:999px; }
+    .bmi-indicator { position:absolute; top:50%; margin-top:-10px; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #34C759; box-shadow:0 2px 8px rgba(52,199,89,.35); z-index:10; transition:left .6s cubic-bezier(.34,1.56,.64,1); }
+    .bmi-indicator::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:6px; height:6px; border-radius:50%; background:var(--dot,#34C759); }
+    .bmi-number { font-variant-numeric:tabular-nums; }
+    .day-group { overflow:hidden; }
+    .day-header svg.arrow { transition:transform .2s ease; }
+    .day-header .arrow-open { transform:rotate(180deg); }
   </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -98,8 +108,21 @@
         <p class="text-xs font-bold text-gray-500 mb-2.5 uppercase tracking-wider">运动时长</p>
         <div id="dur-btns" class="flex flex-wrap gap-2 mb-2"></div>
         <input type="number" id="inp-custom-dur" placeholder="自定义分钟" min="1" class="w-full bg-gray-50 border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 rounded-xl px-3 py-2.5 text-sm font-medium outline-none transition-all mb-5">
-        <p class="text-xs font-bold text-gray-500 mb-2.5 uppercase tracking-wider">运动项目 (可多选)</p>
+        <div class="flex items-center justify-between mb-2.5">
+          <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">运动项目 (可多选)</p>
+          <label class="flex items-center gap-1 cursor-pointer select-none" id="sport-edit-label">
+            <span class="text-[10px] font-medium text-gray-400" id="edit-label-off">正常</span>
+            <div class="relative w-8 h-4 rounded-full bg-gray-200 transition-colors" id="edit-track">
+              <div class="absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform" id="edit-knob"></div>
+            </div>
+            <span class="text-[10px] font-medium text-gray-400" id="edit-label-on">编辑</span>
+          </label>
+        </div>
         <div id="type-btns" class="flex flex-wrap gap-2"></div>
+        <div class="flex gap-2 mt-3">
+          <input type="text" id="inp-custom-type" placeholder="自定义运动" maxlength="12" class="flex-1 bg-gray-50 border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 rounded-xl px-3 py-2.5 text-sm font-medium outline-none transition-all">
+          <button id="btn-add-type" class="px-4 py-2.5 bg-teal-600 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 active:bg-teal-800 transition-all text-sm shrink-0">添加</button>
+        </div>
       </div>
       <div class="flex gap-3 p-4 border-t border-gray-100 shrink-0 pb-safe">
         <button id="sport-cancel" class="flex-1 py-3 text-gray-500 font-bold bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors text-sm">取消</button>
@@ -188,6 +211,20 @@ const db = {
   }
 };
 
+const SPORT_TYPES_KEY = 'diet_tracker_sport_types_v2';
+const DEFAULT_TYPES = ['壶铃', '力量训练', '跑步', '跳绳', '爬楼', '有氧操', '自由训练'];
+
+function getSportTypes() {
+  try {
+    const stored = localStorage.getItem(SPORT_TYPES_KEY);
+    return stored ? JSON.parse(stored) : [...DEFAULT_TYPES];
+  } catch { return [...DEFAULT_TYPES]; }
+}
+
+function saveSportTypes(types) {
+  localStorage.setItem(SPORT_TYPES_KEY, JSON.stringify(types));
+}
+
 /* ======================================================
    STATE
    ====================================================== */
@@ -196,6 +233,9 @@ let displayLimit = 30;
 let chartPeriod = 'week';
 let lineChartInst = null, barChartInst = null;
 let sportDur = '30', sportTypes = [];
+let sportEditMode = false;
+let filterTab = 'all';
+let collapsedDates = null;
 let deferredPWAPrompt = null;
 
 /* ======================================================
@@ -262,13 +302,17 @@ window.addEventListener('hashchange', () => {
    ====================================================== */
 function getHomeHTML() {
   return `<div class="h-screen flex flex-col anim-in">
-    <div class="flex-1 overflow-y-auto p-4 pb-6">
+      <div class="flex-1 overflow-y-auto p-4 pb-36">
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-2xl font-bold text-teal-800 tracking-tight">今日记录</h2>
         <span id="today-date" class="text-xs font-medium text-gray-400"></span>
       </div>
-      <h3 class="text-xs font-bold text-gray-400 mb-3 px-1 uppercase tracking-widest">近期动态</h3>
-      <div id="history-list" class="space-y-2.5"></div>
+      <div class="flex gap-1.5 bg-gray-100 rounded-xl p-1 mb-3" id="filter-tabs">
+        <button data-ftab="all" class="ftab-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all bg-white text-teal-700 shadow-sm">全部</button>
+        <button data-ftab="weight" class="ftab-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all text-gray-500 hover:text-gray-700">称重</button>
+        <button data-ftab="sport" class="ftab-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all text-gray-500 hover:text-gray-700">运动</button>
+      </div>
+      <div id="history-list"></div>
       <div id="history-empty" class="hidden text-center py-14 bg-white/80 rounded-2xl border border-dashed border-gray-200">
         <div class="w-14 h-14 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-gray-300"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -318,13 +362,31 @@ function renderHomeList() {
   d.sports.forEach(s => mixed.push({ ...s, type: 'sport' }));
   mixed.sort((a, b) => b.timestamp - a.timestamp);
 
-  if (!mixed.length) { list.innerHTML = ''; empty.classList.remove('hidden'); moreWrap.classList.add('hidden'); initSwipe(); return; }
+  const filtered = filterTab === 'all' ? mixed : mixed.filter(m => m.type === filterTab);
+
+  if (!filtered.length) { list.innerHTML = ''; empty.classList.remove('hidden'); moreWrap.classList.add('hidden'); initSwipe(); return; }
   empty.classList.add('hidden');
 
-  const show = mixed.slice(0, displayLimit);
-  moreWrap.classList.toggle('hidden', mixed.length <= displayLimit);
+  const show = filtered.slice(0, displayLimit);
+  moreWrap.classList.toggle('hidden', filtered.length <= displayLimit);
 
-  list.innerHTML = show.map(item => {
+  // Group by date
+  const groups = {};
+  show.forEach(m => {
+    if (!groups[m.date]) groups[m.date] = [];
+    groups[m.date].push(m);
+  });
+  const dates = Object.keys(groups).sort().reverse();
+
+  // Initialize collapsed state on first render
+  const today = new Date();
+  const todayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  if (collapsedDates === null) {
+    collapsedDates = new Set();
+    dates.forEach(d => { if (d !== todayStr) collapsedDates.add(d); });
+  }
+
+  function itemHTML(item) {
     const isW = item.type === 'weight';
     const label = isW ? '体重' : '运动';
     const labelBg = isW ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600';
@@ -333,7 +395,6 @@ function renderHomeList() {
       ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>'
       : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>';
     const value = isW ? `${item.value} kg` : `${item.types.join(' + ')}  ${item.duration}分`;
-
     return `<div class="swipe-wrap rounded-xl" data-id="${item.id}" data-type="${item.type}">
       <div class="swipe-bg"><span class="text-white text-xs font-bold">删除</span></div>
       <div class="swipe-inner bg-white rounded-xl p-3.5 flex items-center justify-between shadow-sm border border-gray-50">
@@ -350,6 +411,22 @@ function renderHomeList() {
         <button class="btn-del shrink-0 text-gray-300 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors" data-id="${item.id}" data-type="${item.type}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
         </button>
+      </div>
+    </div>`;
+  }
+
+  list.innerHTML = dates.map(date => {
+    const items = groups[date];
+    const collapsed = collapsedDates.has(date);
+    const d = new Date(date + 'T00:00:00');
+    const label = `${d.getMonth()+1}月${d.getDate()}日 (${items.length})`;
+    return `<div class="mb-2.5 day-group">
+      <button class="day-header w-full flex items-center justify-between px-1 py-2 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors" data-date="${date}">
+        <span>${label}</span>
+        <svg class="arrow ${collapsed ? '' : 'arrow-open'}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="space-y-2.5 ${collapsed ? 'hidden' : ''}" data-items="${date}">
+        ${items.map(itemHTML).join('')}
       </div>
     </div>`;
   }).join('');
@@ -390,7 +467,7 @@ function handleDelete(type, id) {
    ====================================================== */
 function getAnalyzeHTML() {
   const periodBtnClass = (p) => `period-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all ${chartPeriod === p ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`;
-  return `<div class="p-4 pb-24 anim-in">
+  return `<div class="h-full overflow-y-auto p-4 pb-24 anim-in">
     <h2 class="text-2xl font-bold text-teal-800 tracking-tight mb-5">数据分析</h2>
     <div class="flex gap-1.5 bg-gray-100 rounded-xl p-1 mb-5">
       <button data-period="week" class="${periodBtnClass('week')}">近一周</button>
@@ -405,7 +482,10 @@ function getAnalyzeHTML() {
       <div class="h-52"><canvas id="chart-line"></canvas></div>
     </div>
     <div id="bar-card" class="bg-white rounded-2xl p-4 shadow-sm mb-5 border border-gray-50">
-      <h3 class="font-bold text-gray-800 text-sm mb-4">运动与体重对比</h3>
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-gray-800 text-sm">运动时长分布</h3>
+        <span id="sport-total" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600"></span>
+      </div>
       <div class="h-56"><canvas id="chart-bar"></canvas></div>
     </div>
     <button id="btn-export-report" class="w-full py-3 bg-teal-600 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 active:bg-teal-800 transition-all text-sm mb-3">
@@ -434,16 +514,44 @@ function getChartData(period) {
   else if (period === 'month') cutoff.setDate(cutoff.getDate() - 30);
   else cutoff.setFullYear(2000);
 
-  const wByDate = {};
-  d.weights.forEach(w => { if (w.date >= cutoff.toISOString().split('T')[0]) { if (!wByDate[w.date] || w.timestamp > wByDate[w.date].ts) wByDate[w.date] = { v: parseFloat(w.value), ts: w.timestamp }; } });
-  const sByDate = {};
-  d.sports.forEach(s => { if (s.date >= cutoff.toISOString().split('T')[0]) sByDate[s.date] = (sByDate[s.date] || 0) + s.duration; });
+  const cutoffStr = cutoff.toISOString().split('T')[0];
 
-  const dates = [...new Set([...Object.keys(wByDate), ...Object.keys(sByDate)])].sort();
+  const weightPoints = d.weights
+    .filter(w => w.date >= cutoffStr)
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map(w => ({
+      label: w.time ? `${w.date.substring(5)} ${w.time.slice(0,5)}` : w.date.substring(5),
+      value: parseFloat(w.value),
+      date: w.date
+    }));
+
+  const sByDate = {};
+  const typeByDate = {};
+  d.sports.forEach(s => {
+    if (s.date >= cutoffStr) {
+      sByDate[s.date] = (sByDate[s.date] || 0) + s.duration;
+      s.types.forEach(t => {
+        const k = `${s.date}::${t}`;
+        typeByDate[k] = (typeByDate[k] || 0) + s.duration;
+      });
+    }
+  });
+
+  const dates = [...new Set([...weightPoints.map(w => w.date), ...Object.keys(sByDate)])].sort();
+
+  const sportTypeData = {};
+  const allSportTypes = [...new Set(d.sports.filter(s => s.date >= cutoffStr).flatMap(s => s.types))];
+  allSportTypes.forEach(type => {
+    const arr = dates.map(d => typeByDate[`${d}::${type}`] || 0);
+    if (arr.some(v => v > 0)) sportTypeData[type] = arr;
+  });
+
   return {
-    labels: dates.map(d => d.substring(5)),
-    weights: dates.map(d => wByDate[d] ? wByDate[d].v : null),
-    durations: dates.map(d => sByDate[d] || 0),
+    weightLabels: weightPoints.map(w => w.label),
+    weightValues: weightPoints.map(w => w.value),
+    barLabels: dates.map(d => d.substring(5)),
+    barDurations: dates.map(d => sByDate[d] || 0),
+    sportTypeData,
     rawDates: dates
   };
 }
@@ -465,9 +573,8 @@ function renderAnalyzeCharts() {
   emptyEl.classList.add('hidden');
   lineCard.classList.remove('hidden'); barCard.classList.remove('hidden'); exportBtn.classList.remove('hidden');
 
-  const validW = cd.weights.filter(Boolean);
-  if (validW.length >= 2) {
-    const diff = validW[validW.length - 1] - validW[0];
+  if (cd.weightValues.length >= 2) {
+    const diff = cd.weightValues[cd.weightValues.length - 1] - cd.weightValues[0];
     const arrow = diff < 0 ? '↓' : diff > 0 ? '↑' : '→';
     trendEl.textContent = `${arrow} ${Math.abs(diff).toFixed(1)}kg`;
     trendEl.className = `text-[10px] font-bold px-2 py-0.5 rounded-full ${diff <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`;
@@ -477,38 +584,60 @@ function renderAnalyzeCharts() {
   const gridColor = 'rgba(0,0,0,0.04)';
 
   const lineDs = [{
-    label: '体重', data: cd.weights, borderColor: '#0d9488', backgroundColor: 'rgba(13,148,136,0.08)',
+    label: '体重', data: cd.weightValues, borderColor: '#0d9488', backgroundColor: 'rgba(13,148,136,0.08)',
     fill: true, tension: 0.35, pointBackgroundColor: '#0d9488', pointBorderColor: '#fff', pointBorderWidth: 2,
-    pointRadius: cd.rawDates.length > 20 ? 2 : 4, pointHoverRadius: 6, spanGaps: true
+    pointRadius: cd.weightValues.length > 30 ? 2 : 4, pointHoverRadius: 6
   }];
   if (target) lineDs.push({
-    label: `目标 ${target}kg`, data: Array(cd.rawDates.length).fill(target),
+    label: `目标 ${target}kg`, data: Array(cd.weightValues.length).fill(target),
     borderColor: '#f43f5e', borderDash: [8, 4], borderWidth: 1.5, pointRadius: 0, fill: false
   });
 
   lineChartInst = new Chart(document.getElementById('chart-line').getContext('2d'), {
-    type: 'line', data: { labels: cd.labels, datasets: lineDs },
+    type: 'line', data: { labels: cd.weightLabels, datasets: lineDs },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }, tooltip: { mode: 'index', intersect: false } },
-      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } } }, y: { grid: { color: gridColor }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) } } },
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 14, padding: 16, font: { size: 10 } } }, tooltip: { mode: 'index', intersect: false } },
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, font: { size: 9 } } }, y: { grid: { color: gridColor }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1) } } },
       interaction: { mode: 'nearest', axis: 'x', intersect: false }
     }
   });
 
+  const totalMin = cd.barDurations.reduce((a, b) => a + b, 0);
+  const hh = Math.floor(totalMin / 60), mm = totalMin % 60;
+  const totalEl = document.getElementById('sport-total');
+  const hasSport = Object.keys(cd.sportTypeData).length > 0;
+  barCard.classList.toggle('hidden', !hasSport);
+  totalEl.textContent = hasSport ? `累计 ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}` : '';
+
+  if (!hasSport) { barChartInst = null; return; }
+
+  const typeColors = {
+    '壶铃': '#f97316', '力量训练': '#dc2626', '跑步': '#2563eb',
+    '跳绳': '#7c3aed', '爬楼': '#0891b2', '游泳': '#059669',
+    '有氧操': '#d97706', 'HIIT': '#db2777'
+  };
+
+  const ds = Object.entries(cd.sportTypeData).map(([type, data]) => ({
+    label: type,
+    data,
+    backgroundColor: typeColors[type] || '#9ca3af',
+    borderRadius: 0,
+    barPercentage: 0.45,
+    categoryPercentage: 0.8
+  }));
+
   barChartInst = new Chart(document.getElementById('chart-bar').getContext('2d'), {
     type: 'bar',
-    data: { labels: cd.labels, datasets: [
-      { label: '体重 (kg)', data: cd.weights, yAxisID: 'y', backgroundColor: 'rgba(13,148,136,0.65)', borderRadius: 3, barPercentage: 0.35 },
-      { label: '运动 (min)', data: cd.durations, yAxisID: 'y1', backgroundColor: 'rgba(249,115,22,0.65)', borderRadius: 3, barPercentage: 0.35 }
-    ]},
+    data: { labels: cd.barLabels, datasets: ds },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }, tooltip: { mode: 'index', intersect: false } },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 8 } } }
+      },
       scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } } },
-        y: { type: 'linear', position: 'left', title: { display: true, text: 'kg', font: { size: 10 } }, grid: { color: gridColor }, ticks: { font: { size: 10 } } },
-        y1: { type: 'linear', position: 'right', title: { display: true, text: 'min', font: { size: 10 } }, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
+        x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, font: { size: 10 } } },
+        y: { stacked: true, title: { display: true, text: 'min', font: { size: 10 } }, grid: { color: gridColor }, ticks: { font: { size: 10 } }, beginAtZero: true }
       }
     }
   });
@@ -518,7 +647,7 @@ function renderAnalyzeCharts() {
    PROFILE
    ====================================================== */
 function getProfileHTML() {
-  return `<div class="p-4 pb-8 anim-in">
+  return `<div class="h-full overflow-y-auto p-4 pb-8 anim-in">
     <h2 class="text-2xl font-bold text-teal-800 tracking-tight mb-5">个人中心</h2>
     <div class="bg-white rounded-2xl p-5 shadow-sm mb-5 border border-gray-50">
       <div class="flex items-center gap-4">
@@ -544,19 +673,47 @@ function getProfileHTML() {
         <span class="text-sm text-gray-600 font-medium">身高 (cm)</span>
         <input type="number" id="inp-height" placeholder="用于BMI" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
       </div>
+      <p id="current-weight-display" class="text-xs text-gray-400 pb-3 px-4">当前体重：-- kg</p>
       <div class="flex items-center justify-between p-4">
         <span class="text-sm text-gray-600 font-medium">目标体重 (kg)</span>
         <input type="number" id="inp-target" step="0.1" placeholder="减重目标" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
       </div>
     </div>
-    <div class="bg-white rounded-2xl p-5 shadow-sm mb-5 border border-gray-50">
-      <h3 class="font-bold text-gray-800 text-sm mb-2">BMI 仪表盘</h3>
-      <div id="bmi-gauge" class="my-2"></div>
-      <div class="flex justify-between text-[9px] text-gray-400 mt-1 px-2">
-        <span>&lt;18.5 偏瘦</span>
-        <span>18.5-24 正常</span>
-        <span>24-28 偏胖</span>
-        <span>≥28 肥胖</span>
+    <div id="bmi-card" class="bg-white rounded-2xl shadow-sm mb-5 border border-gray-50 overflow-hidden">
+      <div class="px-5 pt-5 pb-4">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <span class="text-sm font-medium text-gray-500">BMI 指数</span>
+          </div>
+          <span id="bmi-tag" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium"></span>
+        </div>
+        <div class="flex items-baseline gap-1.5 mb-1">
+          <span class="bmi-number text-4xl font-bold text-gray-800 tracking-tight" id="bmi-value">--</span>
+          <span class="text-sm text-gray-400 font-normal">kg/m²</span>
+        </div>
+        <p class="text-xs text-gray-400">体质指数（Body Mass Index）</p>
+      </div>
+      <div class="mx-5 border-t border-gray-100"></div>
+      <div class="px-5 pt-4 pb-5">
+        <div class="flex justify-between mb-2 px-[1px]">
+          <span class="text-[10px] text-gray-400" style="width:22.86%;text-align:center">偏瘦</span>
+          <span class="text-[10px] text-gray-400" style="width:31.43%;text-align:center">正常</span>
+          <span class="text-[10px] text-gray-400" style="width:22.86%;text-align:center">偏胖</span>
+          <span class="text-[10px] text-gray-400" style="width:22.86%;text-align:center">肥胖</span>
+        </div>
+        <div class="relative px-[2px]">
+          <div class="bmi-track">
+            <div class="bmi-indicator" id="bmi-indicator" style="left:0%"></div>
+          </div>
+        </div>
+        <div class="relative h-5 mt-2">
+          <span class="absolute text-[9px] text-gray-400 font-mono" style="left:22.86%;transform:translateX(-50%)">18.5</span>
+          <span class="absolute text-[9px] text-gray-400 font-mono" style="left:54.29%;transform:translateX(-50%)">24.0</span>
+          <span class="absolute text-[9px] text-gray-400 font-mono" style="left:77.14%;transform:translateX(-50%)">28.0</span>
+        </div>
       </div>
     </div>
     <button id="btn-pwa-install" class="hidden w-full py-3 mb-5 bg-teal-600 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 hover:bg-teal-700 transition-all text-sm flex items-center justify-center gap-2">
@@ -573,6 +730,23 @@ function getProfileHTML() {
   </div>`;
 }
 
+function renderProfileContent() {
+  const d = db.get();
+  const img = document.getElementById('avatar-img');
+  const ph = document.getElementById('avatar-ph');
+  if (d.user.avatar) { img.src = d.user.avatar; img.classList.remove('hidden'); ph.classList.add('hidden'); }
+  else { img.classList.add('hidden'); ph.classList.remove('hidden'); }
+  document.getElementById('inp-nickname').value = d.user.nickname || '';
+  document.querySelectorAll('.gender-btn').forEach(b => {
+    b.className = `gender-btn px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all ${parseInt(b.dataset.g) === d.user.gender ? 'bg-teal-600 border-teal-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-400'}`;
+  });
+  document.getElementById('inp-height').value = d.user.height || '';
+  document.getElementById('inp-target').value = d.user.targetWeight || '';
+  const cwEl = document.getElementById('current-weight-display');
+  if (cwEl) cwEl.textContent = d.weights.length ? `当前体重：${d.weights[0].value} kg` : '当前体重：-- kg';
+  renderGauge(d);
+}
+
 function renderProfile() {
   document.getElementById('main-content').innerHTML = getProfileHTML();
   renderProfileContent();
@@ -584,27 +758,39 @@ function renderProfile() {
 function renderGauge(d) {
   const h = parseFloat(d.user.height);
   const bmi = (h && d.weights.length) ? (parseFloat(d.weights[0].value) / ((h / 100) ** 2)) : null;
-  const box = document.getElementById('bmi-gauge');
-  const cx = 100, cy = 100, r = 78;
-  function pt(deg) { const rd = deg * Math.PI / 180; return { x: cx + r * Math.cos(rd), y: cy + r * Math.sin(rd) }; }
-  function arc(a1, a2) { const p1 = pt(a1), p2 = pt(a2); return `M${p1.x.toFixed(1)} ${p1.y.toFixed(1)} A${r} ${r} 0 ${(a2-a1)>180?1:0} 1 ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`; }
-  const b2a = b => 180 + ((b - 14) / 22) * 180;
-  const zones = [{ f:14,t:18.5,c:'#60a5fa' },{ f:18.5,t:24,c:'#4ade80' },{ f:24,t:28,c:'#fbbf24' },{ f:28,t:36,c:'#f87171' }];
-  let svg = `<svg viewBox="0 0 200 115" class="w-full max-w-[260px] mx-auto block">`;
-  zones.forEach(z => { svg += `<path d="${arc(b2a(z.f),b2a(z.t))}" fill="none" stroke="${z.c}" stroke-width="16" stroke-linecap="butt" opacity="0.2"/>`; });
-  if (bmi) {
-    const cl = Math.max(14,Math.min(36,bmi)), ang = b2a(cl);
-    let col; if(bmi<18.5)col='#3b82f6';else if(bmi<24)col='#22c55e';else if(bmi<28)col='#eab308';else col='#ef4444';
-    svg += `<path d="${arc(180,ang)}" fill="none" stroke="${col}" stroke-width="16" stroke-linecap="round"/>`;
-    const nr = r - 24, tip = { x:cx+nr*Math.cos(ang*Math.PI/180), y:cy+nr*Math.sin(ang*Math.PI/180) };
-    svg += `<line x1="${cx}" y1="${cy}" x2="${tip.x.toFixed(1)}" y2="${tip.y.toFixed(1)}" stroke="#374151" stroke-width="2.5" stroke-linecap="round"/>`;
-    svg += `<circle cx="${cx}" cy="${cy}" r="5" fill="#374151"/><circle cx="${cx}" cy="${cy}" r="2.5" fill="#fff"/>`;
-    svg += `<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="22" font-weight="bold" fill="${col}">${bmi.toFixed(1)}</text>`;
-    let st; if(bmi<18.5)st='偏瘦';else if(bmi<24)st='正常';else if(bmi<28)st='偏胖';else st='肥胖';
-    svg += `<text x="${cx}" y="${cy+37}" text-anchor="middle" font-size="10" fill="#9ca3af">${st}</text>`;
-  } else { svg += `<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="14" fill="#d1d5db">暂无数据</text>`; }
-  svg += `</svg>`;
-  box.innerHTML = svg;
+  const valEl = document.getElementById('bmi-value');
+  const tagEl = document.getElementById('bmi-tag');
+  const indEl = document.getElementById('bmi-indicator');
+  const BMI_MIN = 14.5, BMI_MAX = 32.0;
+  const pct = v => ((Math.max(BMI_MIN, Math.min(BMI_MAX, v)) - BMI_MIN) / (BMI_MAX - BMI_MIN)) * 100;
+
+  if (!bmi) {
+    valEl.textContent = '--';
+    tagEl.textContent = ''; tagEl.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium';
+    indEl.style.left = '0%';
+    return;
+  }
+
+  const v = parseFloat(bmi.toFixed(1));
+  let label, cls, col;
+  if (v < 18.5) { label = '偏瘦'; cls = 'bg-blue-50 text-blue-600'; col = '#4A90D9'; }
+  else if (v < 24) { label = '正常'; cls = 'bg-green-50 text-green-600'; col = '#34C759'; }
+  else if (v < 28) { label = '偏胖'; cls = 'bg-yellow-50 text-yellow-600'; col = '#F5A623'; }
+  else { label = '肥胖'; cls = 'bg-red-50 text-red-600'; col = '#FF3B30'; }
+
+  tagEl.textContent = label; tagEl.className = `inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${cls}`;
+  indEl.style.borderColor = col; indEl.style.left = `${pct(v)}%`;
+  indEl.style.setProperty('--dot', col);
+
+  const start = performance.now();
+  const dur = 700;
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    valEl.textContent = (e * v).toFixed(1);
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 /* ======================================================
@@ -612,11 +798,13 @@ function renderGauge(d) {
    ====================================================== */
 const sportModal = document.getElementById('sport-modal');
 const customDurInp = document.getElementById('inp-custom-dur');
-const PRESETS = ['15', '30', '45', '60'];
-const SPORT_TYPES = ['壶铃', '力量训练', '跑步', '跳绳', '爬楼', '游泳', '有氧操', 'HIIT'];
+const PRESETS = ['10', '15', '30', '45', '60'];
 
 function openSport() {
-  sportDur = '30'; sportTypes = []; customDurInp.value = '';
+  const types = getSportTypes();
+  sportTypes = types.length ? [types[0]] : [];
+  sportDur = '10'; customDurInp.value = '';
+  const ct = document.querySelector('#inp-custom-type'); if (ct) ct.value = '';
   renderSportUI();
   sportModal.classList.remove('hidden');
 }
@@ -638,18 +826,31 @@ function renderSportUI() {
     return `<button data-d="${d}" class="dur-opt px-4 py-2 rounded-xl text-xs font-bold transition-all border ${sel ? 'bg-teal-600 border-teal-600 text-white shadow-md shadow-teal-600/20' : 'bg-white border-gray-200 text-gray-600 hover:border-teal-300'}">${d}分</button>`;
   }).join('');
 
+  const track = document.getElementById('edit-track');
+  const knob = document.getElementById('edit-knob');
+  const offLabel = document.getElementById('edit-label-off');
+  const onLabel = document.getElementById('edit-label-on');
+  if (track && knob && offLabel && onLabel) {
+    track.className = `relative w-8 h-4 rounded-full transition-colors ${sportEditMode ? 'bg-teal-500' : 'bg-gray-200'}`;
+    knob.className = `absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${sportEditMode ? 'translate-x-4 left-0.5' : 'left-0.5'}`;
+    offLabel.className = `text-[10px] font-medium ${sportEditMode ? 'text-gray-300' : 'text-gray-500'}`;
+    onLabel.className = `text-[10px] font-medium ${sportEditMode ? 'text-teal-600' : 'text-gray-300'}`;
+  }
+
+  const types = getSportTypes();
   const typeBox = document.getElementById('type-btns');
-  typeBox.innerHTML = SPORT_TYPES.map(t => {
+  typeBox.innerHTML = types.map(t => {
     const sel = sportTypes.includes(t);
-    return `<button data-t="${t}" class="type-opt px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1 ${sel ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'}">${sel ? '✓ ' : ''}${t}</button>`;
+    const delBtn = sportEditMode
+      ? `<button data-del="${t}" class="type-del absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors text-[10px] leading-none shadow-sm">✕</button>`
+      : '';
+    return `<div class="relative type-item">
+      <button data-t="${t}" class="type-opt px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1 ${sel ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'}">${sel ? '✓ ' : ''}${t}</button>
+      ${delBtn}
+    </div>`;
   }).join('');
 
   durBox.querySelectorAll('.dur-opt').forEach(b => b.onclick = () => { sportDur = b.dataset.d; customDurInp.value = ''; renderSportUI(); });
-  typeBox.querySelectorAll('.type-opt').forEach(b => b.onclick = () => {
-    const t = b.dataset.t;
-    sportTypes = sportTypes.includes(t) ? sportTypes.filter(x => x !== t) : [...sportTypes, t];
-    renderSportUI();
-  });
 }
 
 /* ======================================================
@@ -658,6 +859,31 @@ function renderSportUI() {
 document.getElementById('app').addEventListener('click', e => {
   const navBtn = e.target.closest('.nav-btn');
   if (navBtn) { navigate(navBtn.dataset.tab); return; }
+
+  if (e.target.closest('#sport-edit-label')) {
+    sportEditMode = !sportEditMode;
+    renderSportUI();
+    return;
+  }
+
+  const ftab = e.target.closest('.ftab-btn');
+  if (ftab) {
+    filterTab = ftab.dataset.ftab;
+    document.querySelectorAll('.ftab-btn').forEach(b => {
+      b.className = `ftab-btn flex-1 py-2 text-xs font-bold rounded-lg transition-all ${b === ftab ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`;
+    });
+    renderHomeList();
+    return;
+  }
+
+  const dh = e.target.closest('.day-header');
+  if (dh) {
+    const date = dh.dataset.date;
+    const wasCollapsed = collapsedDates.has(date);
+    if (wasCollapsed) collapsedDates.delete(date); else collapsedDates.add(date);
+    renderHomeList();
+    return;
+  }
 
   if (e.target.closest('#btn-save-w')) {
     const v = document.querySelector('#inp-weight')?.value;
@@ -728,6 +954,39 @@ document.getElementById('app').addEventListener('click', e => {
     if (!deferredPWAPrompt) return;
     deferredPWAPrompt.prompt();
     deferredPWAPrompt.userChoice.then(() => { deferredPWAPrompt = null; document.querySelector('#btn-pwa-install')?.classList.add('hidden'); });
+    return;
+  }
+
+  if (e.target.closest('#btn-add-type')) {
+    const inp = document.querySelector('#inp-custom-type');
+    const val = inp?.value.trim();
+    if (!val) { showToast('请输入运动名称', true); return; }
+    const types = getSportTypes();
+    if (types.includes(val)) { showToast('该运动已存在', true); return; }
+    types.push(val);
+    saveSportTypes(types);
+    inp.value = '';
+    renderSportUI();
+    return;
+  }
+
+  const delBtn = e.target.closest('[data-del]');
+  if (delBtn) {
+    const t = delBtn.dataset.del;
+    showConfirm('删除运动', `确定删除"${t}"吗？`, () => {
+      const types = getSportTypes().filter(x => x !== t);
+      saveSportTypes(types);
+      sportTypes = sportTypes.filter(x => x !== t);
+      renderSportUI();
+    });
+    return;
+  }
+
+  const typeOpt = e.target.closest('.type-opt');
+  if (typeOpt) {
+    const t = typeOpt.dataset.t;
+    sportTypes = sportTypes.includes(t) ? sportTypes.filter(x => x !== t) : [...sportTypes, t];
+    renderSportUI();
     return;
   }
 
@@ -840,7 +1099,7 @@ async function handleExportReport() {
   }
   const manifest = {
     name:'减肥记录助手专业版', short_name:'减肥记录',
-    start_url:'./index.html?utm_source=pwa', display:'standalone',
+    start_url:'./code-mimo.html?utm_source=pwa', display:'standalone',
     background_color:'#ffffff', theme_color:'#0f766e',
     icons:[{src:genIcon(192),sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:genIcon(512),sizes:'512x512',type:'image/png',purpose:'any maskable'}]
   };

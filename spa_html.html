@@ -107,12 +107,10 @@
         <p class="text-sm text-gray-400 mt-1">快去录入你的第一条数据吧</p>
       </div>
 
-      <!-- 悬浮打卡按钮 -->
-      <div class="fixed bottom-32 left-1/2 -translate-x-1/2 w-full max-w-md pointer-events-none flex justify-end px-4 z-30">
-        <button id="btn-open-sport" class="pointer-events-auto bg-gradient-to-br from-teal-400 to-teal-600 text-white rounded-full p-4 shadow-lg shadow-teal-600/30 hover:scale-110 active:scale-95 transition-all flex items-center justify-center hover:-translate-y-1" aria-label="记录今日运动">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
-        </button>
-      </div>
+      <!-- 悬浮打卡按钮（可拖动） -->
+      <button id="btn-open-sport" class="fixed z-30 bg-gradient-to-br from-teal-400 to-teal-600 text-white rounded-full p-4 shadow-lg shadow-teal-600/30 flex items-center justify-center select-none touch-none active:scale-95" style="right: 16px; bottom: 80px;" aria-label="记录今日运动">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+      </button>
     </div>
 
     <!-- 2. 分析视图 (Analyze) -->
@@ -481,7 +479,10 @@
   }
   function closeSportModal() { sportModal.classList.add('hidden'); }
   
-  document.getElementById('btn-open-sport').addEventListener('click', openSportModal);
+  document.getElementById('btn-open-sport').addEventListener('click', () => {
+    if (isFabDragging) return;
+    openSportModal();
+  });
   document.getElementById('btn-close-sport').addEventListener('click', closeSportModal);
   document.getElementById('btn-cancel-sport').addEventListener('click', closeSportModal);
   
@@ -687,6 +688,75 @@
       refreshUI();
     });
   });
+
+  /** --- FAB 拖拽 --- */
+  const FAB_POS_KEY = 'diet_tracker_fab_v1';
+  let isFabDragging = false;
+  let fabStartX, fabStartY, fabInitRight, fabInitBottom;
+
+  (function initFabDrag() {
+    const fab = document.getElementById('btn-open-sport');
+
+    try {
+      const saved = localStorage.getItem(FAB_POS_KEY);
+      if (saved) {
+        const { right, bottom } = JSON.parse(saved);
+        fab.style.right = right + 'px';
+        fab.style.bottom = bottom + 'px';
+      }
+    } catch(e) {}
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    function onStart(e) {
+      isFabDragging = false;
+      const p = e.touches ? e.touches[0] : e;
+      fabStartX = p.clientX;
+      fabStartY = p.clientY;
+      const r = fab.getBoundingClientRect();
+      fabInitRight = window.innerWidth - r.right;
+      fabInitBottom = window.innerHeight - r.bottom;
+
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onEnd);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onEnd);
+    }
+
+    function onMove(e) {
+      const p = e.touches ? e.touches[0] : e;
+      const dx = p.clientX - fabStartX;
+      const dy = p.clientY - fabStartY;
+
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        if (!isFabDragging) isFabDragging = true;
+      }
+      if (!isFabDragging) return;
+      e.preventDefault();
+
+      const newRight = clamp(fabInitRight - dx, -30, window.innerWidth - 30);
+      const newBottom = clamp(fabInitBottom - dy, 0, window.innerHeight - 30);
+      fab.style.right = newRight + 'px';
+      fab.style.bottom = newBottom + 'px';
+    }
+
+    function onEnd() {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+
+      if (isFabDragging) {
+        localStorage.setItem(FAB_POS_KEY, JSON.stringify({
+          right: Math.round(fabInitRight),
+          bottom: Math.round(fabInitBottom)
+        }));
+      }
+    }
+
+    fab.addEventListener('touchstart', onStart, { passive: true });
+    fab.addEventListener('mousedown', onStart);
+  })();
 
   // Init APP
   renderHome();

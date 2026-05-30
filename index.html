@@ -328,7 +328,7 @@ function refresh() {
 }
 
 window.addEventListener('hashchange', () => {
-  const tab = location.hash.replace('#', '') || 'home';
+  const tab = location.hash.replace('#', '') || 'profile';
   renderView(tab);
 });
 
@@ -704,7 +704,7 @@ function getProfileHTML() {
         <span class="text-sm text-gray-600 font-medium">身高 (cm)</span>
         <input type="number" id="inp-height" placeholder="用于BMI" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
       </div>
-      <p id="current-weight-display" class="text-xs text-gray-400 pb-3 px-4">当前体重：-- kg</p>
+      <div id="current-weight-area"></div>
       <div class="flex items-center justify-between p-4">
         <span class="text-sm text-gray-600 font-medium">目标体重 (kg)</span>
         <input type="number" id="inp-target" step="0.1" placeholder="减重目标" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
@@ -773,8 +773,15 @@ function renderProfileContent() {
   });
   document.getElementById('inp-height').value = d.user.height || '';
   document.getElementById('inp-target').value = d.user.targetWeight || '';
-  const cwEl = document.getElementById('current-weight-display');
-  if (cwEl) cwEl.textContent = d.weights.length ? `当前体重：${d.weights[0].value} kg` : '当前体重：-- kg';
+  const cwArea = document.getElementById('current-weight-area');
+  if (d.weights.length) {
+    cwArea.innerHTML = `<p class="text-xs text-gray-400 pb-3 px-4">当前体重：${d.weights[0].value} kg</p>`;
+  } else {
+    cwArea.innerHTML = `<div class="flex items-center justify-between px-4 pb-3 border-b border-gray-50">
+      <span class="text-sm text-gray-600 font-medium">当前体重 (kg)</span>
+      <input type="number" id="inp-current-weight" step="0.1" placeholder="输入体重" class="text-right bg-transparent outline-none text-gray-800 font-bold w-24 text-sm">
+    </div>`;
+  }
   renderGauge(d);
 }
 
@@ -1078,12 +1085,35 @@ document.getElementById('app').addEventListener('blur', e => {
   }
   if (e.target.id === 'inp-height') {
     const v = parseFloat(e.target.value);
-    if (v > 0) { db.setUser('height', Math.round(v)); showToast('身高已保存'); renderProfileContent(); }
+    if (v > 0) {
+      showConfirm('确认身高', `是否将身高设为 ${Math.round(v)} cm？`, () => {
+        db.setUser('height', Math.round(v));
+        showToast('身高已保存');
+        renderProfileContent();
+      });
+    }
     return;
   }
   if (e.target.id === 'inp-target') {
     const v = parseFloat(e.target.value);
-    if (v > 0) { db.setUser('targetWeight', v.toFixed(1)); showToast('目标已保存'); renderProfileContent(); }
+    if (v > 0) {
+      showConfirm('确认目标', `是否将目标体重设为 ${v.toFixed(1)} kg？`, () => {
+        db.setUser('targetWeight', v.toFixed(1));
+        showToast('目标已保存');
+        renderProfileContent();
+      });
+    }
+    return;
+  }
+  if (e.target.id === 'inp-current-weight') {
+    const v = e.target.value;
+    if (v && !isNaN(v) && parseFloat(v) > 0) {
+      showConfirm('确认体重', `是否将体重 ${v} kg 设为首条记录？`, () => {
+        db.addWeight(v);
+        showToast('体重已记录');
+        renderProfileContent();
+      });
+    }
     return;
   }
 }, true);
@@ -1166,7 +1196,7 @@ if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').
 /* ======================================================
    INIT
    ====================================================== */
-if (!location.hash) location.hash = 'home';
+if (!location.hash) location.hash = 'profile';
 window.dispatchEvent(new Event('hashchange'));
 </script>
 </body>

@@ -178,7 +178,7 @@
    DATA SERVICE
    ====================================================== */
 const DB_KEY = 'diet_tracker_spa_v2';
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 
 const defaultDB = () => ({
   user: { nickname: '减脂达人', avatar: '', gender: 0, height: '', targetWeight: '' },
@@ -1173,22 +1173,14 @@ async function handleExportReport() {
    PWA & OFFLINE
    ====================================================== */
 (function initManifest() {
-  function genIcon(sz) {
-    const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz;
-    const x = cv.getContext('2d'), rr = sz * 0.18;
-    x.fillStyle = '#0f766e';
-    x.beginPath(); x.moveTo(rr,0); x.lineTo(sz-rr,0); x.quadraticCurveTo(sz,0,sz,rr);
-    x.lineTo(sz,sz-rr); x.quadraticCurveTo(sz,sz,sz-rr,sz); x.lineTo(rr,sz);
-    x.quadraticCurveTo(0,sz,0,sz-rr); x.lineTo(0,rr); x.quadraticCurveTo(0,0,rr,0); x.fill();
-    x.fillStyle='#fff'; x.font=`bold ${sz*.38}px sans-serif`; x.textAlign='center'; x.textBaseline='middle';
-    x.fillText('减',sz/2,sz/2+sz*.02);
-    return cv.toDataURL('image/png');
-  }
   const manifest = {
     name:'减肥记录助手专业版', short_name:'减肥记录',
     start_url:'./?utm_source=pwa', display:'standalone',
     background_color:'#ffffff', theme_color:'#0f766e',
-    icons:[{src:genIcon(192),sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:genIcon(512),sizes:'512x512',type:'image/png',purpose:'any maskable'}]
+    icons:[
+      {src:'icon/icon-192.png', sizes:'192x192', type:'image/png', purpose:'any maskable'},
+      {src:'icon/icon-512.png', sizes:'512x512', type:'image/png', purpose:'any maskable'}
+    ]
   };
   const blob = new Blob([JSON.stringify(manifest)],{type:'application/json'});
   document.getElementById('manifest-link').href = URL.createObjectURL(blob);
